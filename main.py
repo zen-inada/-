@@ -24,17 +24,24 @@ class Alg3D(ABC):
 # ここから下だけロジックを編集
 class MyAI(Alg3D):
     SIZE = 4
-    # 3D 方向（両向きを数えるので片側だけ列挙）
+    # 3D 方向（反対向きは走査でカバーするので片側だけ列挙）
     DIRECTIONS = [
         (1, 0, 0), (0, 1, 0), (0, 0, 1),
-        (1, 1, 0), (-1, 1, 0), (1, 0, 1), (0, 1, 1),
+        (1, 1, 0), (-1, 1, 0),
+        (1, 0, 1), (0, 1, 1),
         (1, 1, 1), (-1, 1, 1), (1, -1, 1)
     ]
 
     def get_move(self, board: Board) -> Tuple[int, int]:
         # --- 手番推定（石の数から）---
-        cnt1 = sum(board[z][y][x] == 1 for z in range(self.SIZE) for y in range(self.SIZE) for x in range(self.SIZE))
-        cnt2 = sum(board[z][y][x] == 2 for z in range(self.SIZE) for y in range(self.SIZE) for x in range(self.SIZE))
+        cnt1 = sum(board[z][y][x] == 1
+                   for z in range(self.SIZE)
+                   for y in range(self.SIZE)
+                   for x in range(self.SIZE))
+        cnt2 = sum(board[z][y][x] == 2
+                   for z in range(self.SIZE)
+                   for y in range(self.SIZE)
+                   for x in range(self.SIZE))
         me = 1 if cnt1 <= cnt2 else 2
         opp = 3 - me
 
@@ -53,10 +60,16 @@ class MyAI(Alg3D):
                 return (x, y)
 
         # ③ 簡易スコアで選ぶ
-        scored = [(self._score_move(board, x, y, me), (x, y)) for (x, y) in legal]
-        best_score = max(s for s, _ in scored)
-        candidates = [mv for s, mv in scored if s == best_score]
-        return random.choice(candidates) if candidates else (0, 0)
+        best_score = -10**9
+        best_moves: List[Tuple[int, int]] = []
+        for (x, y) in legal:
+            s = self._score_move(board, x, y, me)
+            if s > best_score:
+                best_score = s
+                best_moves = [(x, y)]
+            elif s == best_score:
+                best_moves.append((x, y))
+        return random.choice(best_moves) if best_moves else (0, 0)
 
     # ====== 以降は補助メソッド ======
     def _in_bounds(self, x: int, y: int, z: int) -> bool:
@@ -94,9 +107,10 @@ class MyAI(Alg3D):
         if z == -1:
             return False
         board[z][y][x] = player
-        won = self._check_win_from(board, x, y, z, player)
-        board[z][y][x] = 0  # 差分だけ元に戻す
-        return won
+        try:
+            return self._check_win_from(board, x, y, z, player)
+        finally:
+            board[z][y][x] = 0  # 差分だけ元に戻す
 
     def _score_move(self, board: Board, x: int, y: int, player: int) -> int:
         z = self._top_z(board, x, y)
@@ -104,6 +118,35 @@ class MyAI(Alg3D):
             return -1  # 非合法
         score = 0
         for dx, dy, dz in self.DIRECTIONS:
-            line: List[int] = []
+            own = 0
+            empties = 0
+            # この手を通る方向で -3..+3 の範囲を見る
             for d in range(-3, 4):
-                nx, ny,
+                nx, ny, nz = x + dx * d, y + dy * d, z + dz * d
+                if self._in_bounds(nx, ny, nz):
+                    v = board[nz][ny][nx]
+                    if v == player:
+                        own += 1
+                    elif v == 0:
+                        empties += 1
+            # 自石2以上かつ空き2以上のラインを少し優先
+            if own >= 2 and empties >= 2:
+                score += 1
+        return score
+
+    def _all_legal_moves(self, board: Board) -> List[Tuple[int, int]]:
+        return [(x, y)
+                for y in range(self.SIZE)
+                for x in range(self.SIZE)
+                if self._top_z(board, x, y) != -1]
+
+# ---- 変更禁止：ワーカーが呼ぶエントリポイント ----
+_ai = MyAI()
+
+def get_move(board: Board) -> Tuple[int, int]:
+    print("send_board")  # ログ（ワーカー側でstderrに回収されます）:contentReference[oaicite:1]{index=1}
+    x, y = _ai.get_move(board)
+    x, y = int(x), int(y)
+    if not (0 <= x < 4 and 0 <= y < 4):
+        raise ValueError(f"move out of range: {(x, y)}")
+    return x, y
