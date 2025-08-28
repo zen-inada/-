@@ -150,3 +150,8 @@ def get_move(board: Board) -> Tuple[int, int]:
     if not (0 <= x < 4 and 0 <= y < 4):
         raise ValueError(f"move out of range: {(x, y)}")
     return x, y
+
+# main.py の末尾（変更可領域でOK）
+def get_move(board):
+    return MyAI().get_move(board)
+
